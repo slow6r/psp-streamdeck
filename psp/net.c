@@ -10,18 +10,20 @@
 #include <pspnet_resolver.h>
 #include <psputility.h>
 #include <psputility_modules.h>
-#include <psputility_netconf.h>
 #include <pspwlan.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 
 #include "net.h"
-#include "ui.h"
 
 /*
- * Конечный автомат сети:
- *   WLAN_OFF -> DIALOG (системный выбор Wi-Fi) -> SEARCH (broadcast)
- *   -> CONNECT (TCP) -> LINKED, при обрыве снова SEARCH/DIALOG.
+ * Конечный автомат сети, полностью без системных диалогов:
+ *
+ *   WLAN_OFF -> NOCONN -> AUTOCONN (профиль 1..3) -> SEARCH
+ *   -> LINKED, при обрыве снова AUTOCONN/SEARCH.
+ *
+ * Профиль Wi-Fi создаётся пользователем один раз в родных
+ * настройках PSP: XMB -> Настройки -> Настройки сети.
  */
 
 #define DISCOVERY_PORT 50000
@@ -31,6 +33,8 @@
 #define PING_PERIOD_MS 5000
 #define PONG_TIMEOUT_MS 12000
 #define BROADCAST_PERIOD_MS 400
+#define AUTOCONN_PROFILE_MAX 3
+#define AUTOCONN_TIMEOUT_MS 8000
 
 static NetState state = NET_WLAN_OFF;
 static Deck *deck = NULL;
@@ -40,12 +44,9 @@ static int tcp_fd = -1;
 static unsigned int pc_ip_bytes[4];
 static int pc_port = TCP_PORT_DEFAULT;
 
-static pspUtilityNetconfData netconf;
-static int netconf_started = 0;
-static int pending_dialog = 0; /* 1 = открыть диалог при следующем tick */
-static unsigned int dialog_begin_ms = 0;
+static int autoconn_next = 1;         /* следующий пробуемый профиль */
+static int autoconn_attempted = 0;    /* цикл попыток уже был */
 static unsigned int autoconn_begin_ms = 0;
-static int autoconn_pending = 0;
 
 static char rxbuf[1024];
 static int rxlen = 0;
@@ -83,6 +84,28 @@ static int wifi_connected(void)
     if (sceNetApctlGetState(&st) < 0)
         return 0;
     return st == PSP_NET_APCTL_STATE_GOT_IP;
+}
+
+/* ---------- авто-подключение сохранёнными профилями ---------- */
+
+static void autoconn_begin(void)
+{
+    sceNetApctlDisconnect();
+
+    while (autoconn_next <= AUTOCONN_PROFILE_MAX) {
+        int idx = autoconn_next++;
+
+        if (sceNetApctlConnect(idx) >= 0) {
+            autoconn_begin_ms = now_ms();
+            state = NET_AUTOCONN;
+            return;
+        }
+        /* профиля нет — пробуем следующий */
+    }
+
+    /* профили кончились: ждём, пока сеть появится/настроят в XMB */
+    autoconn_next = 1;
+    state = NET_NOCONN;
 }
 
 /* ---------- UDP discovery ---------- */
@@ -171,11 +194,10 @@ static void tcp_drop(void)
     rxlen = 0;
     if (wifi_connected()) {
         state = NET_SEARCH;
-        if (udp_open() < 0)
-            state = NET_SEARCH; /* socket откроется лениво в NET_SEARCH */
+        last_broadcast_ms = 0;
     } else {
-        state = NET_DIALOG;
-        autoconn_pending = 1; /* попробовать сохранённый профиль снова */
+        state = NET_NOCONN;
+        autoconn_attempted = 0; /* разрешить новый цикл профилей */
     }
 }
 
@@ -348,74 +370,6 @@ static void tcp_poll(void)
     }
 }
 
-/* ---------- системный диалог Wi-Fi ---------- */
-
-static void netconf_begin(void)
-{
-    memset(&netconf, 0, sizeof(netconf));
-    netconf.base.size = (unsigned int)sizeof(netconf);
-    netconf.base.language = 1;            /* английский */
-    netconf.base.buttonSwap = 1;          /* X = подтверждение */
-    netconf.base.graphicsThread = 0x11;
-    netconf.base.accessThread = 0x13;
-    netconf.base.fontThread = 0x12;
-    netconf.base.soundThread = 0x10;
-    netconf.action = PSP_NETCONF_ACTION_CONNECTAP;
-    netconf.hotspot = 0;
-    netconf.wifisp = 0;
-
-    if (sceUtilityNetconfInitStart(&netconf) < 0) {
-        /* диалог не стартовал: экран остаётся наш, ждём SELECT */
-        netconf_started = 0;
-        ui_set_vram(0);
-        return;
-    }
-
-    dialog_begin_ms = now_ms();
-    ui_set_vram(1); /* экран отдаем системному диалогу */
-    netconf_started = 1;
-}
-
-static void netconf_finish(void)
-{
-    ui_set_vram(0);
-    netconf_started = 0;
-
-    if (wifi_connected()) {
-        state = NET_SEARCH;
-        last_broadcast_ms = 0;
-    }
-    /* нет сети — на главный экран, диалог откроют кнопкой SELECT */
-}
-
-static void netconf_tick(void)
-{
-    int st = sceUtilityNetconfGetStatus();
-
-    switch (st) {
-    case PSP_UTILITY_DIALOG_INIT:
-        /* страховка: если диалог застрял в инициализации — возвращаем экран */
-        if (now_ms() - dialog_begin_ms > 3000)
-            netconf_finish();
-        break;
-    case PSP_UTILITY_DIALOG_VISIBLE:
-        sceUtilityNetconfUpdate(1);
-        break;
-    case PSP_UTILITY_DIALOG_QUIT:
-        sceUtilityNetconfShutdownStart();
-        break;
-    case PSP_UTILITY_DIALOG_FINISHED:
-        netconf_finish();
-        break;
-    case PSP_UTILITY_DIALOG_NONE:
-    default:
-        /* диалог не инициализировался — выходим, не висим чёрным экраном */
-        if (netconf_started)
-            netconf_finish();
-        break;
-    }
-}
-
 /* ---------- публичный интерфейс ---------- */
 
 int net_start(Deck *d)
@@ -436,7 +390,7 @@ int net_start(Deck *d)
     if (sceNetResolverInit() < 0)
         return -1;
 
-    /* если Wi-Fi уже подключён (например, запуск из браузера) — идем сразу в поиск */
+    /* если Wi-Fi уже подключён — сразу в поиск ПК */
     state = wifi_connected() ? NET_SEARCH : NET_WLAN_OFF;
     if (state == NET_SEARCH && udp_open() < 0)
         state = NET_WLAN_OFF;
@@ -446,17 +400,6 @@ int net_start(Deck *d)
 NetState net_state(void)
 {
     return state;
-}
-
-int net_dialog_active(void)
-{
-    return state == NET_DIALOG && netconf_started;
-}
-
-void net_open_dialog(void)
-{
-    if (state == NET_DIALOG && !netconf_started)
-        pending_dialog = 1;
 }
 
 int net_linked(void)
@@ -471,34 +414,27 @@ void net_tick(void)
     switch (state) {
     case NET_WLAN_OFF:
         if (sceWlanGetSwitchState() > 0) {
-            state = NET_DIALOG;
-            autoconn_pending = 1; /* пробуем сохранённое подключение */
+            state = NET_NOCONN;
+            autoconn_attempted = 0;
         }
         break;
 
     case NET_INIT:
-        state = NET_DIALOG;
-        autoconn_pending = 1;
+        state = NET_NOCONN;
+        autoconn_attempted = 0;
         break;
 
-    case NET_DIALOG:
-        if (netconf_started) {
-            netconf_tick();
+    case NET_NOCONN:
+        if (!wifi_connected()) {
+            /* один цикл попыток по сохранённым профилям */
+            if (!autoconn_attempted) {
+                autoconn_attempted = 1;
+                autoconn_begin();
+            }
             break;
         }
-        if (pending_dialog) {
-            pending_dialog = 0;
-            netconf_begin();
-            break;
-        }
-        /* пробуем сохранённый профиль Wi-Fi без всяких диалогов */
-        if (autoconn_pending) {
-            autoconn_pending = 0;
-            autoconn_begin_ms = now;
-            if (sceNetApctlConnect(1) >= 0)
-                state = NET_AUTOCONN;
-        }
-        /* иначе: ждём SELECT, экран остаётся наш */
+        state = NET_SEARCH;
+        last_broadcast_ms = 0;
         break;
 
     case NET_AUTOCONN: {
@@ -510,17 +446,17 @@ void net_tick(void)
             break;
         }
         sceNetApctlGetState(&st);
-        /* нет профиля или сеть не отвечает — ждём SELECT */
-        if (st == PSP_NET_APCTL_STATE_DISCONNECTED &&
-            now - autoconn_begin_ms > 8000)
-            state = NET_DIALOG;
+        /* профиль не смог подключиться или таймаут — следующий профиль */
+        if (st == PSP_NET_APCTL_STATE_DISCONNECTED ||
+            now - autoconn_begin_ms > AUTOCONN_TIMEOUT_MS)
+            autoconn_begin();
         break;
     }
 
     case NET_SEARCH:
         if (!wifi_connected()) {
-            state = NET_DIALOG;
-            autoconn_pending = 1; /* переподключиться сохранённым профилем */
+            state = NET_NOCONN;
+            autoconn_attempted = 0;
             break;
         }
         if (udp_fd < 0 && udp_open() < 0)

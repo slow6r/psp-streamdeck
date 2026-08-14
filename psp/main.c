@@ -9,7 +9,7 @@
 #include "net.h"
 #include "ui.h"
 
-PSP_MODULE_INFO("PSPDECK", 0, 1, 2);
+PSP_MODULE_INFO("PSPDECK", 0, 1, 3);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER);
 PSP_MAIN_THREAD_STACK_SIZE_KB(1024);
 
@@ -57,7 +57,7 @@ static UiLinkState link_state(void)
         return UI_LINK_SEARCH;
     case NET_AUTOCONN:
         return UI_LINK_JOIN;
-    case NET_DIALOG:
+    case NET_NOCONN:
     case NET_INIT:
         return UI_LINK_WIFI;
     default:
@@ -98,17 +98,6 @@ int main(void)
 
         if (edge & PSP_CTRL_START)
             break;
-
-        /* пока открыт системный диалог Wi-Fi — экран принадлежит ему */
-        if (net_dialog_active()) {
-            net_tick();
-            sceDisplayWaitVblankStart();
-            continue;
-        }
-
-        /* SELECT: открыть диалог выбора Wi-Fi, когда сети нет */
-        if (edge & PSP_CTRL_SELECT)
-            net_open_dialog();
 
         if (edge & PSP_CTRL_LEFT)
             col = (col + 3) % 4;

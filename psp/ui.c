@@ -337,7 +337,7 @@ static const char *link_status_text(UiLinkState link, unsigned int *col)
     case UI_LINK_SEARCH:  *col = COL_WARN; return "SCAN";
     case UI_LINK_CONNECT: *col = COL_WARN; return "CONN";
     case UI_LINK_JOIN:    *col = COL_WARN; return "JOIN";
-    case UI_LINK_WIFI:    *col = COL_WARN; return "SELECT: WIFI";
+    case UI_LINK_WIFI:    *col = COL_WARN; return "NO NET";
     default:              *col = COL_ERR;  return "WLAN OFF";
     }
 }
@@ -388,8 +388,10 @@ void ui_draw_grid(const Deck *deck, int page, int selected, int flash_button)
     int row, col;
 
     if (!deck || deck->page_count <= 0) {
-        ui_text_centered(UI_SCREEN_W / 2, UI_SCREEN_H / 2 - FONT_H / 2, 1,
-                         COL_TEXT_DIM, "Нет раскладки — подключись к ПК");
+        ui_text_centered(UI_SCREEN_W / 2, UI_SCREEN_H / 2 - FONT_H, 1,
+                         COL_TEXT, "Нет связи с ПК");
+        ui_text_centered(UI_SCREEN_W / 2, UI_SCREEN_H / 2 + FONT_H / 2, 1,
+                         COL_TEXT_DIM, "Wi-Fi настраивается: Настройки -> Сеть");
         return;
     }
 
@@ -461,5 +463,5 @@ void ui_draw_footer(void)
     fill_rect(0, UI_SCREEN_H - FTR_H, UI_SCREEN_W, FTR_H, COL_HDR_BG);
     hline(0, UI_SCREEN_H - FTR_H, UI_SCREEN_W, COL_HDR_LINE);
     ui_text_centered(UI_SCREEN_W / 2, UI_SCREEN_H - FTR_H + 3, 1, COL_TEXT_DIM,
-                     "X — нажать · L/R — стр · SELECT — Wi-Fi · START — выход");
+                     "X — нажать · L/R — страницы · START — выход");
 }

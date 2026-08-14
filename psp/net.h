@@ -3,11 +3,17 @@
 
 #include "deck.h"
 
+/*
+ * Сеть без системных диалогов: подключение делается через профиль,
+ * созданный в родных настройках PSP (XMB -> Настройки сети).
+ * Приложение само подключается к первому рабочему профилю.
+ */
+
 typedef enum {
     NET_WLAN_OFF = 0, /* тумблер WLAN выключен */
     NET_INIT,         /* инициализация сетевого стека */
-    NET_DIALOG,       /* нет сети; диалог открывается кнопкой SELECT */
-    NET_AUTOCONN,     /* пробуем сохранённое подключение Wi-Fi */
+    NET_NOCONN,       /* нет профиля/сети — настроить в XMB */
+    NET_AUTOCONN,     /* подключаемся сохранённым профилем */
     NET_SEARCH,       /* broadcast-поиск ПК */
     NET_CONNECT,      /* TCP-подключение к ПК */
     NET_LINKED        /* связь установлена */
@@ -21,15 +27,6 @@ int net_start(Deck *deck);
 void net_tick(void);
 
 NetState net_state(void);
-
-/* Просит открыть системный диалог выбора Wi-Fi (кнопка SELECT).
-   Работает, когда мы не в сети и диалог не открыт. */
-void net_open_dialog(void);
-
-/* 1, пока открыт системный диалог Wi-Fi (в это времяmain не должен
-   трогать framebuffer — экран принадлежит диалогу). */
-int net_dialog_active(void);
-
 int net_linked(void);
 int net_send_press(int page, int button);
 void net_shutdown(void);
