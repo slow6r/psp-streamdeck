@@ -9,7 +9,8 @@
 
 typedef enum {
     UI_LINK_OFF = 0, /* тумблер WLAN выключен */
-    UI_LINK_WIFI,    /* подключение к Wi-Fi (системный диалог) */
+    UI_LINK_WIFI,    /* нет сети, SELECT открывает диалог Wi-Fi */
+    UI_LINK_JOIN,    /* подключаемся к сохранённой сети */
     UI_LINK_SEARCH,  /* ищем ПК в сети */
     UI_LINK_CONNECT, /* подключаемся к ПК */
     UI_LINK_OK       /* связь установлена */

@@ -1,5 +1,5 @@
 TARGET = pspdeck
-OBJS = main.o ui.o net.o font8x8.o
+OBJS = main.o ui.o net.o font12x12.o
 
 INCDIR =
 CFLAGS = -O2 -G0 -Wall -std=gnu99

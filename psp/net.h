@@ -6,7 +6,8 @@
 typedef enum {
     NET_WLAN_OFF = 0, /* тумблер WLAN выключен */
     NET_INIT,         /* инициализация сетевого стека */
-    NET_DIALOG,       /* системный диалог выбора Wi-Fi */
+    NET_DIALOG,       /* нет сети; диалог открывается кнопкой SELECT */
+    NET_AUTOCONN,     /* пробуем сохранённое подключение Wi-Fi */
     NET_SEARCH,       /* broadcast-поиск ПК */
     NET_CONNECT,      /* TCP-подключение к ПК */
     NET_LINKED        /* связь установлена */

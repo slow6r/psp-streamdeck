@@ -9,7 +9,7 @@
 #include "net.h"
 #include "ui.h"
 
-PSP_MODULE_INFO("PSPDECK", 0, 1, 1);
+PSP_MODULE_INFO("PSPDECK", 0, 1, 2);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER);
 PSP_MAIN_THREAD_STACK_SIZE_KB(1024);
 
@@ -55,6 +55,8 @@ static UiLinkState link_state(void)
         return UI_LINK_CONNECT;
     case NET_SEARCH:
         return UI_LINK_SEARCH;
+    case NET_AUTOCONN:
+        return UI_LINK_JOIN;
     case NET_DIALOG:
     case NET_INIT:
         return UI_LINK_WIFI;

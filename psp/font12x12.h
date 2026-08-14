@@ -1,9 +1,9 @@
-#ifndef FONT8X8_H
-#define FONT8X8_H
+#ifndef FONT12X12_H
+#define FONT12X12_H
 
 /*
- * Растровый шрифт 8x8, генерируется tools/genfont.py.
- * Бит 0x80 первого байта = верхний-левый пиксель глифа.
+ * Растровый шрифт 12x12, генерируется tools/genfont.py.
+ * По unsigned short на строку глифа, бит 0x800 = верхний-левый пиксель.
  *
  * Индексы:
  *   0..94    ASCII 0x20..0x7E
@@ -14,10 +14,10 @@
  *   160      Ё     (UTF-8: D0 81)
  *   161      ё     (UTF-8: D1 91)
  */
-extern const unsigned char font8x8[162][8];
+extern const unsigned short font12x12[162][12];
 
 #define FONT_GLYPH_COUNT 162
-#define FONT_GLYPH_W 8
-#define FONT_GLYPH_H 8
+#define FONT_W 12
+#define FONT_H 12
 
 #endif

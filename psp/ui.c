@@ -3,12 +3,13 @@
 
 #include <pspdisplay.h>
 
-#include "font8x8.h"
+#include "font12x12.h"
 #include "ui.h"
 
 /*
  * Отрисовка напрямую в framebuffer (формат 8888), двойная буферизация.
- * Плитка: сетка 4x2, у каждой свой цвет-акцент и подпись.
+ * Стиль: тёмная тема с градиентом, плитки с тенью и акцентной полосой,
+ * «прицельные уголки» на выбранной плитке, статус-пилюля в шапке.
  */
 
 static unsigned int __attribute__((aligned(16))) fbs[2][UI_STRIDE * UI_SCREEN_H];
@@ -22,33 +23,36 @@ static int clip_x0 = 0, clip_x1 = UI_SCREEN_W;
 #define RGB(r, g, b) \
     (0xFF000000u | ((unsigned int)(b) << 16) | ((unsigned int)(g) << 8) | (unsigned int)(r))
 
-#define COL_BG         RGB(16, 18, 24)
-#define COL_HEADER_BG  RGB(24, 27, 36)
-#define COL_FOOTER_BG  RGB(20, 22, 29)
-#define COL_TILE       RGB(32, 36, 46)
-#define COL_TILE_DIM   RGB(24, 27, 34)
-#define COL_TILE_SEL   RGB(48, 54, 68)
-#define COL_BORDER     RGB(60, 66, 82)
-#define COL_BORDER_SEL RGB(235, 238, 248)
-#define COL_TEXT       RGB(232, 234, 242)
-#define COL_TEXT_DIM   RGB(126, 132, 148)
-#define COL_OK         RGB(74, 200, 112)
-#define COL_ERR        RGB(228, 92, 82)
-#define COL_WARN       RGB(238, 190, 72)
+/* палитра: тёмная тема */
+#define COL_BG_TOP     RGB(16, 20, 28)
+#define COL_BG_BOTTOM  RGB(6, 8, 12)
+#define COL_HDR_BG     RGB(22, 27, 36)
+#define COL_HDR_LINE   RGB(48, 56, 70)
+#define COL_TILE       RGB(30, 36, 47)
+#define COL_TILE_DIM   RGB(20, 24, 31)
+#define COL_TILE_HOV   RGB(43, 51, 66)
+#define COL_SHADOW     RGB(3, 4, 6)
+#define COL_BORDER     RGB(52, 61, 77)
+#define COL_ACC        RGB(88, 166, 255)
+#define COL_TEXT       RGB(235, 240, 246)
+#define COL_TEXT_DIM   RGB(140, 150, 165)
+#define COL_OK         RGB(74, 210, 115)
+#define COL_ERR        RGB(248, 93, 88)
+#define COL_WARN       RGB(245, 190, 80)
 #define COL_WHITE      RGB(255, 255, 255)
 
-#define HDR_H 26
-#define FTR_H 16
+#define HDR_H 28
+#define FTR_H 18
 #define GRID_X0 4
-#define GRID_Y0 (HDR_H + 4)
+#define GRID_Y0 (HDR_H + 6)
 #define TILE_W 116
-#define TILE_H 111
+#define TILE_H 106
 #define TILE_GAP 2
 
 static unsigned int mix(unsigned int a, unsigned int b, int t /* 0..255 */)
 {
-    unsigned int ar = (a >> 0) & 0xFF, ag = (a >> 8) & 0xFF, ab = (a >> 16) & 0xFF;
-    unsigned int br = (b >> 0) & 0xFF, bg = (b >> 8) & 0xFF, bb = (b >> 16) & 0xFF;
+    unsigned int ar = a & 0xFF, ag = (a >> 8) & 0xFF, ab = (a >> 16) & 0xFF;
+    unsigned int br = b & 0xFF, bg = (b >> 8) & 0xFF, bb = (b >> 16) & 0xFF;
     unsigned int r = (ar * (255 - t) + br * t) / 255;
     unsigned int g = (ag * (255 - t) + bg * t) / 255;
     unsigned int bl = (ab * (255 - t) + bb * t) / 255;
@@ -72,15 +76,31 @@ static void fill_rect(int x, int y, int w, int h, unsigned int c)
             px(i, j, c);
 }
 
-static void rect(int x, int y, int w, int h, int t, unsigned int c)
+static void hline(int x, int y, int w, unsigned int c)
 {
-    fill_rect(x, y, w, t, c);
-    fill_rect(x, y + h - t, w, t, c);
-    fill_rect(x, y, t, h, c);
-    fill_rect(x + w - t, y, t, h, c);
+    int i;
+    for (i = x; i < x + w; i++)
+        px(i, y, c);
 }
 
-/* ---------- текст ---------- */
+static void vline(int x, int y, int h, unsigned int c)
+{
+    int j;
+    for (j = y; j < y + h; j++)
+        px(x, j, c);
+}
+
+/* «прицельные уголки» — как в камере: 4 уголка по периметру */
+static void focus_brackets(int x, int y, int w, int h, int len, int t,
+                           unsigned int c)
+{
+    hline(x, y, len, c);                 vline(x, y, len, c);
+    hline(x + w - len, y, len, c);       vline(x + w - t, y, len, c);
+    hline(x, y + h - t, len, c);         vline(x, y + h - len, len, c);
+    hline(x + w - len, y + h - t, len, c); vline(x + w - t, y + h - len, len, c);
+}
+
+/* ---------- текст (12x12) ---------- */
 
 /* Один символ UTF-8 -> индекс глифа. Возвращает длину символа в байтах,
    0 на конце строки. Нераспознанное -> -1 (нарисуется '?'). */
@@ -116,20 +136,18 @@ static int utf8_next(const char *s, int i, int *gidx)
 static void draw_glyph(int x, int y, int scale, unsigned int c, int gidx)
 {
     int rx, ry, sx, sy;
-    const unsigned char *g;
+    const unsigned short *g;
 
-    if (gidx < 0)
-        gidx = '?' - 0x20;
-    if (gidx >= FONT_GLYPH_COUNT)
+    if (gidx < 0 || gidx >= FONT_GLYPH_COUNT)
         gidx = '?' - 0x20;
 
-    g = font8x8[gidx];
-    for (ry = 0; ry < 8; ry++) {
-        unsigned char row = g[ry];
+    g = font12x12[gidx];
+    for (ry = 0; ry < FONT_H; ry++) {
+        unsigned short row = g[ry];
         if (!row)
             continue;
-        for (rx = 0; rx < 8; rx++) {
-            if (row & (0x80 >> rx)) {
+        for (rx = 0; rx < FONT_W; rx++) {
+            if (row & (0x800 >> rx)) {
                 for (sy = 0; sy < scale; sy++)
                     for (sx = 0; sx < scale; sx++)
                         px(x + rx * scale + sx, y + ry * scale + sy, c);
@@ -144,7 +162,7 @@ int ui_text(int x, int y, int scale, unsigned int c, const char *s)
 
     while ((adv = utf8_next(s, i, &gidx)) != 0) {
         draw_glyph(x, y, scale, c, gidx);
-        x += 8 * scale;
+        x += FONT_W * scale;
         i += adv;
     }
     return x;
@@ -163,7 +181,7 @@ static int text_glyph_count(const char *s)
 
 int ui_text_width(int scale, const char *s)
 {
-    return text_glyph_count(s) * 8 * scale;
+    return text_glyph_count(s) * FONT_W * scale;
 }
 
 void ui_text_centered(int cx, int y, int scale, unsigned int c, const char *s)
@@ -176,7 +194,7 @@ void ui_text_right(int right, int y, int scale, unsigned int c, const char *s)
     ui_text(right - ui_text_width(scale, s), y, scale, c, s);
 }
 
-/* ---------- подпись плитки: масштаб 2 в одну строку, иначе 1 с переносом ---------- */
+/* ---------- подпись плитки: перенос по словам, авт. масштаб ---------- */
 
 static void draw_tile_label(const char *label, int x, int y, int w, int h)
 {
@@ -185,12 +203,11 @@ static void draw_tile_label(const char *label, int x, int y, int w, int h)
     int inner_w = w - 8;
 
     if (ui_text_width(2, label) <= inner_w) {
-        ui_text_centered(x + w / 2, y + (h - 16) / 2, 2, COL_TEXT, label);
+        ui_text_centered(x + w / 2, y + (h - FONT_H * 2) / 2, 2, COL_TEXT, label);
         return;
     }
 
     {
-        /* разбор по словам с байтовыми смещениями (UTF-8 не рвём) */
         const char *line_ptr[MAX_LINES];
         int line_len[MAX_LINES];
         int nlines = 0;
@@ -223,7 +240,7 @@ static void draw_tile_label(const char *label, int x, int y, int w, int h)
             return;
 
         {
-            int max_chars = inner_w / 8;
+            int max_chars = inner_w / FONT_W; /* 8 символов при 108px */
             int first = 0, acc = 0;
 
             for (int wi = 0; wi < nwords; wi++) {
@@ -248,7 +265,7 @@ static void draw_tile_label(const char *label, int x, int y, int w, int h)
         }
 
         {
-            int block_h = nlines * 10;
+            int block_h = nlines * (FONT_H + 2);
             int ty = y + (h - block_h) / 2;
 
             for (int li = 0; li < nlines; li++) {
@@ -259,7 +276,7 @@ static void draw_tile_label(const char *label, int x, int y, int w, int h)
                     bl = DECK_LABEL_MAX - 1;
                 memcpy(buf, line_ptr[li], bl);
                 buf[bl] = 0;
-                ui_text_centered(x + w / 2, ty + li * 10, 1, COL_TEXT, buf);
+                ui_text_centered(x + w / 2, ty + li * (FONT_H + 2), 1, COL_TEXT, buf);
             }
         }
     }
@@ -291,9 +308,16 @@ void ui_set_vram(int system_dialog_active)
 
 void ui_begin_frame(void)
 {
+    int y;
+
     draw = fbs[fb_index];
     clip_on = 0;
-    fill_rect(0, 0, UI_SCREEN_W, UI_SCREEN_H, COL_BG);
+
+    /* вертикальный градиент фона */
+    for (y = 0; y < UI_SCREEN_H; y++) {
+        unsigned int c = mix(COL_BG_TOP, COL_BG_BOTTOM, y * 255 / UI_SCREEN_H);
+        fill_rect(0, y, UI_SCREEN_W, 1, c);
+    }
 }
 
 void ui_end_frame(void)
@@ -306,41 +330,57 @@ void ui_end_frame(void)
 
 /* ---------- шапка / сетка / подвал ---------- */
 
+static const char *link_status_text(UiLinkState link, unsigned int *col)
+{
+    switch (link) {
+    case UI_LINK_OK:      *col = COL_OK;   return "ONLINE";
+    case UI_LINK_SEARCH:  *col = COL_WARN; return "SCAN";
+    case UI_LINK_CONNECT: *col = COL_WARN; return "CONN";
+    case UI_LINK_JOIN:    *col = COL_WARN; return "JOIN";
+    case UI_LINK_WIFI:    *col = COL_WARN; return "SELECT: WIFI";
+    default:              *col = COL_ERR;  return "WLAN OFF";
+    }
+}
+
 void ui_draw_header(UiLinkState link, int battery, int page, int page_count,
                     const char *page_name)
 {
+    unsigned int st_col;
     const char *status;
-    unsigned int status_col;
     char buf[48];
+    int st_w, pill_x, pill_y = 6, pill_h = HDR_H - 12;
 
-    fill_rect(0, 0, UI_SCREEN_W, HDR_H, COL_HEADER_BG);
-    fill_rect(0, HDR_H, UI_SCREEN_W, 1, COL_BORDER);
+    fill_rect(0, 0, UI_SCREEN_W, HDR_H, COL_HDR_BG);
+    hline(0, HDR_H, UI_SCREEN_W, COL_HDR_LINE);
 
-    ui_text(6, 9, 1, COL_TEXT, "PSP DECK");
+    /* логотип слева с акцентной чертой */
+    fill_rect(6, 8, 3, 12, COL_ACC);
+    ui_text(14, 8, 1, COL_WHITE, "PSP DECK");
 
     /* страница по центру */
     if (page_count > 0) {
-        snprintf(buf, sizeof(buf), "%d/%d  %s", page + 1, page_count,
+        snprintf(buf, sizeof(buf), "%d/%d · %s", page + 1, page_count,
                  page_name && page_name[0] ? page_name : "");
-        ui_text_centered(UI_SCREEN_W / 2, 9, 1, COL_TEXT_DIM, buf);
+        ui_text_centered(UI_SCREEN_W / 2 + 20, 8, 1, COL_TEXT_DIM, buf);
     }
 
-    /* статус связи */
-    switch (link) {
-    case UI_LINK_OK:      status = "LINK OK";      status_col = COL_OK;   break;
-    case UI_LINK_SEARCH:  status = "SCAN...";      status_col = COL_WARN; break;
-    case UI_LINK_CONNECT: status = "CONN...";      status_col = COL_WARN; break;
-    case UI_LINK_WIFI:    status = "SELECT: WI-FI"; status_col = COL_WARN; break;
-    default:              status = "WLAN OFF";     status_col = COL_ERR;  break;
-    }
-    ui_text_right(UI_SCREEN_W - 44, 9, 1, status_col, status);
+    /* статус-пилюля справа */
+    status = link_status_text(link, &st_col);
+    st_w = ui_text_width(1, status);
+    pill_x = UI_SCREEN_W - 6 - 40 - 10 - st_w - 12;
 
-    /* батарея справа */
+    fill_rect(pill_x - 6, pill_y, st_w + 12, pill_h, mix(st_col, COL_HDR_BG, 190));
+    fill_rect(pill_x - 6, pill_y, st_w + 12, 1, mix(st_col, COL_HDR_BG, 80));
+    fill_rect(pill_x - 6, pill_y + pill_h - 1, st_w + 12, 1,
+              mix(st_col, COL_HDR_BG, 80));
+    ui_text(pill_x, pill_y + 3, 1, st_col, status);
+
+    /* батарея в самом правом углу */
     if (battery >= 0)
         snprintf(buf, sizeof(buf), "%d%%", battery);
     else
         snprintf(buf, sizeof(buf), "AC");
-    ui_text_right(UI_SCREEN_W - 6, 9, 1, COL_TEXT_DIM, buf);
+    ui_text_right(UI_SCREEN_W - 6, 8, 1, COL_TEXT_DIM, buf);
 }
 
 void ui_draw_grid(const Deck *deck, int page, int selected, int flash_button)
@@ -348,14 +388,23 @@ void ui_draw_grid(const Deck *deck, int page, int selected, int flash_button)
     int row, col;
 
     if (!deck || deck->page_count <= 0) {
-        ui_text_centered(UI_SCREEN_W / 2, UI_SCREEN_H / 2 - 4, 1, COL_TEXT_DIM,
-                         "Нет раскладки (нет связи с ПК)");
+        ui_text_centered(UI_SCREEN_W / 2, UI_SCREEN_H / 2 - FONT_H / 2, 1,
+                         COL_TEXT_DIM, "Нет раскладки — подключись к ПК");
         return;
     }
 
     if (page >= deck->page_count)
         page = 0;
 
+    /* проход 1: тени (чтобы не перекрывали соседние плитки) */
+    for (row = 0; row < 2; row++)
+        for (col = 0; col < 4; col++) {
+            int x = GRID_X0 + col * (TILE_W + TILE_GAP);
+            int y = GRID_Y0 + row * (TILE_H + TILE_GAP);
+            fill_rect(x + 2, y + 3, TILE_W, TILE_H, COL_SHADOW);
+        }
+
+    /* проход 2: плитки */
     for (row = 0; row < 2; row++) {
         for (col = 0; col < 4; col++) {
             int i = row * 4 + col;
@@ -364,45 +413,53 @@ void ui_draw_grid(const Deck *deck, int page, int selected, int flash_button)
             const DeckButton *b = &deck->pages[page].buttons[i];
             int is_sel = (i == selected);
             unsigned int base, border;
-            int bt = is_sel ? 2 : 1;
 
             if (b->used) {
                 unsigned int accent = 0xFF000000u | (b->color & 0xFFFFFF);
-                base = mix(COL_TILE, accent, 90); /* лёгкий тон цвета кнопки */
-                border = is_sel ? COL_BORDER_SEL : mix(COL_BORDER, accent, 128);
-                if (i == flash_button)
-                    base = mix(base, COL_WHITE, 120);
+                base = mix(COL_TILE, accent, 40);
+                border = mix(COL_BORDER, accent, 170);
             } else {
                 base = COL_TILE_DIM;
                 border = COL_TILE_DIM;
             }
 
             if (is_sel)
-                base = mix(base, COL_TILE_SEL, 160);
+                base = mix(base, COL_TILE_HOV, 180);
+            if (i == flash_button)
+                base = mix(base, COL_WHITE, 110);
 
             fill_rect(x, y, TILE_W, TILE_H, base);
-            rect(x, y, TILE_W, TILE_H, bt, border);
+
+            /* аккуратная рамка: только верх и низ + бока по 1px */
+            hline(x, y, TILE_W, border);
+            hline(x, y + TILE_H - 1, TILE_W, border);
+            vline(x, y, TILE_H, border);
+            vline(x + TILE_W - 1, y, TILE_H, border);
 
             if (b->used) {
-                /* полоска акцентного цвета сверху */
                 unsigned int accent = 0xFF000000u | (b->color & 0xFFFFFF);
-                fill_rect(x + bt, y + bt, TILE_W - bt * 2, 4,
-                          mix(accent, COL_WHITE, 40));
+                /* акцентная полоса сверху, чуть светлее цвет */
+                fill_rect(x + 1, y + 1, TILE_W - 2, 5,
+                          mix(accent, COL_WHITE, 60));
 
                 clip_on = 1;
                 clip_x0 = x + 2;
                 clip_x1 = x + TILE_W - 2;
-                draw_tile_label(b->label, x, y + 6, TILE_W, TILE_H - 10);
+                draw_tile_label(b->label, x, y + 10, TILE_W, TILE_H - 12);
                 clip_on = 0;
             }
+
+            if (is_sel)
+                focus_brackets(x - 2, y - 2, TILE_W + 4, TILE_H + 4, 12, 2,
+                               COL_WHITE);
         }
     }
 }
 
 void ui_draw_footer(void)
 {
-    fill_rect(0, UI_SCREEN_H - FTR_H, UI_SCREEN_W, FTR_H, COL_FOOTER_BG);
-    fill_rect(0, UI_SCREEN_H - FTR_H, UI_SCREEN_W, 1, COL_BORDER);
-    ui_text_centered(UI_SCREEN_W / 2, UI_SCREEN_H - FTR_H + 4, 1, COL_TEXT_DIM,
-                     "X - нажать  L/R - стр  SELECT - Wi-Fi  START - выход");
+    fill_rect(0, UI_SCREEN_H - FTR_H, UI_SCREEN_W, FTR_H, COL_HDR_BG);
+    hline(0, UI_SCREEN_H - FTR_H, UI_SCREEN_W, COL_HDR_LINE);
+    ui_text_centered(UI_SCREEN_W / 2, UI_SCREEN_H - FTR_H + 3, 1, COL_TEXT_DIM,
+                     "X — нажать · L/R — стр · SELECT — Wi-Fi · START — выход");
 }
