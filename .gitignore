@@ -1,0 +1,13 @@
+# Сборочные артефакты PSP
+psp/*.o
+psp/*.elf
+psp/PARAM.SFO
+psp/EBOOT.PBP
+psp/pspdeck*
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
