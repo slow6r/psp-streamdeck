@@ -1,0 +1,43 @@
+{
+  "pages": [
+    {
+      "name": "Главные",
+      "buttons": [
+        { "label": "TextEdit",   "color": "#4a7bd0", "action": { "type": "run", "cmd": "open -a TextEdit" } },
+        { "label": "Калькулятор", "color": "#d0a04a", "action": { "type": "run", "cmd": "open -a Calculator" } },
+        { "label": "Finder",     "color": "#48a05a", "action": { "type": "run", "cmd": "open -a Finder" } },
+        { "label": "Терминал",   "color": "#444a52", "action": { "type": "run", "cmd": "open -a Terminal" } },
+        { "label": "Скриншот",   "color": "#c05050", "action": { "type": "hotkey", "keys": "cmd+shift+4" } },
+        { "label": "YouTube",    "color": "#cc3333", "action": { "type": "url", "url": "https://www.youtube.com" } },
+        { "label": "Google",     "color": "#5577aa", "action": { "type": "url", "url": "https://www.google.com" } },
+        { "label": "GitHub",     "color": "#666677", "action": { "type": "url", "url": "https://github.com" } }
+      ]
+    },
+    {
+      "name": "Медиа",
+      "buttons": [
+        { "label": "Play/Pause", "color": "#3a8a5a", "action": { "type": "hotkey", "keys": "play" } },
+        { "label": "Следующий", "color": "#3a6a8a", "action": { "type": "hotkey", "keys": "next" } },
+        { "label": "Предыдущий", "color": "#8a6a3a", "action": { "type": "hotkey", "keys": "prev" } },
+        { "label": "Громче",    "color": "#4a8aaa", "action": { "type": "hotkey", "keys": "volumeup" } },
+        { "label": "Тише",      "color": "#4a8aaa", "action": { "type": "hotkey", "keys": "volumedown" } },
+        { "label": "Без звука", "color": "#aa4a4a", "action": { "type": "hotkey", "keys": "mute" } },
+        { "label": "YouTube",   "color": "#cc3333", "action": { "type": "url", "url": "https://www.youtube.com" } },
+        {}
+      ]
+    },
+    {
+      "name": "Работа",
+      "buttons": [
+        { "label": "Блокировка", "color": "#666666", "action": { "type": "hotkey", "keys": "ctrl+cmd+q" } },
+        { "label": "Spotlight",  "color": "#556699", "action": { "type": "hotkey", "keys": "cmd+space" } },
+        { "label": "Сохранить",  "color": "#4a8844", "action": { "type": "hotkey", "keys": "cmd+s" } },
+        { "label": "Копировать", "color": "#448888", "action": { "type": "hotkey", "keys": "cmd+c" } },
+        { "label": "Вставить",   "color": "#448888", "action": { "type": "hotkey", "keys": "cmd+v" } },
+        { "label": "Отменить",   "color": "#886644", "action": { "type": "hotkey", "keys": "cmd+z" } },
+        { "label": "Рабочий стол", "color": "#775588", "action": { "type": "hotkey", "keys": "f11" } },
+        {}
+      ]
+    }
+  ]
+}

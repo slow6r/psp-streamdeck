@@ -7,7 +7,7 @@ PSP как физическая панель макро-клавиш (Stream Dec
 переключают страницы. Связь с ПК по Wi-Fi домашней сети.
 
 ```
-[PSP-3000+ · C] <--Wi-Fi--> [ПК, Windows · Python-сервер]
+[PSP-3000+ · C] <--Wi-Fi--> [ПК, Windows / macOS / Linux · Python-сервер]
  экран 480x272                    config.json + выполнение действий
 ```
 
@@ -32,12 +32,15 @@ PSP как физическая панель макро-клавиш (Stream Dec
 
 ## Быстрый старт
 
-Подробно — в [docs/SETUP.md](docs/SETUP.md). Кратко:
+Подробно — в [docs/SETUP.md](docs/SETUP.md) (Windows) и
+[docs/SETUP_MACOS.md](docs/SETUP_MACOS.md) (macOS). Кратко:
 
 1. **PSP:** скопировать `psp/EBOOT.PBP` на карту в `PSP/GAME/PSPDECK/`.
 2. **ПК (Windows):** поставить Python 3.11+ с python.org,
    `pip install pynput`, запустить `python pspdeck_server.py`,
    разрешить доступ в брандмауэре (частные сети).
+   **macOS:** `pip3 install --user pynput`, `python3 pspdeck_server.py`,
+   выдать Терминалу права «Универсальный доступ» (для хоткеев).
 3. Включить Wi-Fi тумблером на PSP, запустить **PSP Deck** из
    «Игры → Memory Stick», выбрать сеть в диалоге.
 4. Готово — кнопки нажимаются крестиком.
