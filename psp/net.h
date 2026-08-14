@@ -21,6 +21,10 @@ void net_tick(void);
 
 NetState net_state(void);
 
+/* Просит открыть системный диалог выбора Wi-Fi (кнопка SELECT).
+   Работает, когда мы не в сети и диалог не открыт. */
+void net_open_dialog(void);
+
 /* 1, пока открыт системный диалог Wi-Fi (в это времяmain не должен
    трогать framebuffer — экран принадлежит диалогу). */
 int net_dialog_active(void);

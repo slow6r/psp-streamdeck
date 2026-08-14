@@ -104,6 +104,10 @@ int main(void)
             continue;
         }
 
+        /* SELECT: открыть диалог выбора Wi-Fi, когда сети нет */
+        if (edge & PSP_CTRL_SELECT)
+            net_open_dialog();
+
         if (edge & PSP_CTRL_LEFT)
             col = (col + 3) % 4;
         if (edge & PSP_CTRL_RIGHT)

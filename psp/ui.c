@@ -327,11 +327,11 @@ void ui_draw_header(UiLinkState link, int battery, int page, int page_count,
 
     /* статус связи */
     switch (link) {
-    case UI_LINK_OK:      status = "LINK OK";  status_col = COL_OK;   break;
-    case UI_LINK_SEARCH:  status = "SCAN...";  status_col = COL_WARN; break;
-    case UI_LINK_CONNECT: status = "CONN...";  status_col = COL_WARN; break;
-    case UI_LINK_WIFI:    status = "WIFI...";  status_col = COL_WARN; break;
-    default:              status = "WLAN OFF"; status_col = COL_ERR;  break;
+    case UI_LINK_OK:      status = "LINK OK";      status_col = COL_OK;   break;
+    case UI_LINK_SEARCH:  status = "SCAN...";      status_col = COL_WARN; break;
+    case UI_LINK_CONNECT: status = "CONN...";      status_col = COL_WARN; break;
+    case UI_LINK_WIFI:    status = "SELECT: WI-FI"; status_col = COL_WARN; break;
+    default:              status = "WLAN OFF";     status_col = COL_ERR;  break;
     }
     ui_text_right(UI_SCREEN_W - 44, 9, 1, status_col, status);
 
@@ -404,5 +404,5 @@ void ui_draw_footer(void)
     fill_rect(0, UI_SCREEN_H - FTR_H, UI_SCREEN_W, FTR_H, COL_FOOTER_BG);
     fill_rect(0, UI_SCREEN_H - FTR_H, UI_SCREEN_W, 1, COL_BORDER);
     ui_text_centered(UI_SCREEN_W / 2, UI_SCREEN_H - FTR_H + 4, 1, COL_TEXT_DIM,
-                     "X - нажать   L/R - страницы   START - выход");
+                     "X - нажать  L/R - стр  SELECT - Wi-Fi  START - выход");
 }

@@ -42,7 +42,7 @@ static int pc_port = TCP_PORT_DEFAULT;
 
 static pspUtilityNetconfData netconf;
 static int netconf_started = 0;
-static unsigned int dialog_retry_ms = 0; /* задержка перед повтором диалога */
+static int pending_dialog = 0; /* 1 = открыть диалог при следующем tick */
 
 static char rxbuf[1024];
 static int rxlen = 0;
@@ -169,7 +169,7 @@ static void tcp_drop(void)
     state = wifi_connected() ? NET_SEARCH : NET_DIALOG;
     if (state == NET_SEARCH && udp_open() < 0)
         state = NET_DIALOG;
-    dialog_retry_ms = now_ms();
+    /* если ушли в NET_DIALOG — ждём SELECT, сами не открываем */
 }
 
 static int tcp_connect(void)
@@ -357,8 +357,14 @@ static void netconf_begin(void)
     netconf.hotspot = 0;
     netconf.wifisp = 0;
 
+    if (sceUtilityNetconfInitStart(&netconf) < 0) {
+        /* диалог не стартовал: экран остаётся наш, ждём SELECT */
+        netconf_started = 0;
+        ui_set_vram(0);
+        return;
+    }
+
     ui_set_vram(1); /* экран отдаем системному диалогу */
-    sceUtilityNetconfInitStart(&netconf);
     netconf_started = 1;
 }
 
@@ -366,14 +372,12 @@ static void netconf_finish(void)
 {
     ui_set_vram(0);
     netconf_started = 0;
-    dialog_retry_ms = now_ms();
 
     if (wifi_connected()) {
         state = NET_SEARCH;
-        if (udp_open() < 0)
-            state = NET_DIALOG;
+        last_broadcast_ms = 0;
     }
-    /* если не подключились — диалог откроется снова после паузы */
+    /* нет сети — на главный экран, диалог откроют кнопкой SELECT */
 }
 
 static void netconf_tick(void)
@@ -382,7 +386,6 @@ static void netconf_tick(void)
 
     switch (st) {
     case PSP_UTILITY_DIALOG_INIT:
-    case PSP_UTILITY_DIALOG_NONE:
         break;
     case PSP_UTILITY_DIALOG_VISIBLE:
         sceUtilityNetconfUpdate(1);
@@ -391,8 +394,13 @@ static void netconf_tick(void)
         sceUtilityNetconfShutdownStart();
         break;
     case PSP_UTILITY_DIALOG_FINISHED:
-    default:
         netconf_finish();
+        break;
+    case PSP_UTILITY_DIALOG_NONE:
+    default:
+        /* диалог не инициализировался — выходим, не висим чёрным экраном */
+        if (netconf_started)
+            netconf_finish();
         break;
     }
 }
@@ -434,6 +442,12 @@ int net_dialog_active(void)
     return state == NET_DIALOG && netconf_started;
 }
 
+void net_open_dialog(void)
+{
+    if (state == NET_DIALOG && !netconf_started)
+        pending_dialog = 1;
+}
+
 int net_linked(void)
 {
     return state == NET_LINKED && tcp_fd >= 0;
@@ -445,22 +459,25 @@ void net_tick(void)
 
     switch (state) {
     case NET_WLAN_OFF:
-        if (sceWlanGetSwitchState() > 0)
-            state = NET_DIALOG; /* netconf_begin случится в NET_DIALOG */
+        if (sceWlanGetSwitchState() > 0) {
+            state = NET_DIALOG;
+            pending_dialog = 1; /* первый запуск — открываем сразу */
+        }
         break;
 
     case NET_INIT:
         state = NET_DIALOG;
+        pending_dialog = 1;
         break;
 
     case NET_DIALOG:
-        if (!netconf_started) {
-            /* пауза перед повторным открытием диалога */
-            if (dialog_retry_ms == 0 || now - dialog_retry_ms > 1500)
-                netconf_begin();
-        } else {
+        if (netconf_started) {
             netconf_tick();
+        } else if (pending_dialog) {
+            pending_dialog = 0;
+            netconf_begin();
         }
+        /* иначе: ждём SELECT от пользователя, экран остаётся наш */
         break;
 
     case NET_SEARCH:
