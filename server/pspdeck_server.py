@@ -29,6 +29,10 @@ BUTTONS_PER_PAGE = 8
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                            "config.json")
 
+# необязательный аргумент: python pspdeck_server.py [путь/к/config.json]
+if len(sys.argv) > 1:
+    CONFIG_PATH = os.path.abspath(sys.argv[1])
+
 CONFIG = {"pages": []}
 
 try:
